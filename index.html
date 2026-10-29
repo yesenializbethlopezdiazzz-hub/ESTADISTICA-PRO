@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Estadística López 🌸</title>
+    <!-- Tailwind CSS para la estructura general -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Plotly.js para gráficos interactivos -->
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <!-- PapaParse para procesamiento de archivos CSV -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    
+    <style>
+        body {
+            background-color: #FFF0F5;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #4A0E17;
+        }
+        h1, h2, h3, h4 {
+            color: #D81B60 !important;
+        }
+        /* Tarjetas de métricas */
+        .metric-card {
+            background-color: #FFE4E1;
+            border: 2px solid #FF69B4;
+            border-radius: 12px;
+            padding: 12px;
+            text-align: center;
+            box-shadow: 2px 2px 8px rgba(0,0,0,0.05);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .metric-card:hover {
+            transform: scale(1.03);
+            box-shadow: 4px 4px 12px rgba(216, 27, 96, 0.2);
+        }
+        .metric-title {
+            font-size: 0.85rem;
+            color: #D81B60;
+            font-weight: 600;
+        }
+        .metric-value {
+            font-size: 1.4rem;
+            color: #4A0E17;
+            font-weight: bold;
+        }
+        .sidebar {
+            background-color: #FFE4E1;
+            border-right: 2px solid #FF69B4;
+        }
+        .tab-btn.active {
+            border-bottom: 3px solid #D81B60;
+            color: #D81B60;
+            font-weight: bold;
+        }
+        input, select, button {
+            accent-color: #D81B60;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col md:flex-row">
+
+    <!-- BARRA LATERAL / SIDEBAR -->
+    <aside class="sidebar w-full md:w-80 p-6 flex flex-col gap-6 flex-shrink-0">
+        <div>
+            <h2 class="text-xl font-bold mb-4 flex items-center gap-2">📁 Gestión de Datos</h2>
+            
+            <div class="mb-4">
+                <label class="flex items-center gap-2 cursor-pointer font-medium text-sm">
+                    <input type="checkbox" id="chk-sample" checked onchange="toggleDataMode()" class="w-4 h-4">
+                    Usar datos de ejemplo (Clientes y Ventas)
+                </label>
+            </div>
+
+            <div class="mb-4" id="upload-container" style="display: none;">
+                <label class="block text-sm font-medium mb-1">Cargar archivo (CSV)</label>
+                <input type="file" id="file-input" accept=".csv" onchange="handleFileUpload(event)"
+                    class="block w-full text-sm text-slate-700 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-pink-100 file:text-pink-700 hover:file:bg-pink-200"/>
+            </div>
+
+            <div id="status-box" class="p-3 bg-pink-100 border border-pink-300 rounded-lg text-sm text-pink-800 mb-4">
+                ¡Datos de ejemplo cargados con éxito!
+            </div>
+
+            <div id="sample-controls" class="space-y-3">
+                <p class="text-sm"><strong>Tamaño de población disponible (<span id="pop-size">N</span>):</strong> <span id="lbl-N">120</span></p>
+                <div>
+                    <label class="block text-sm font-medium">Tamaño de muestra para análisis (<span id="sample-size">n</span>): <span id="lbl-n-val" class="font-bold">120</span></label>
+                    <input type="range" id="slider-n" min="10" max="120" value="120" class="w-full mt-1" oninput="updateSample()">
+                </div>
+
+                <div id="sample-info-box" class="p-3 rounded-lg text-xs leading-relaxed font-semibold"></div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- CONTENIDO PRINCIPAL -->
+    <main class="flex-1 p-6 overflow-y-auto">
+        <header class="mb-6">
+            <h1 class="text-3xl font-extrabold mb-1">🌸 Estadística López 🌸</h1>
+            <p class="text-lg font-medium text-pink-700">Aplicación Interactiva para Análisis de Datos Cuantitativos y Cualitativos</p>
+        </header>
+
+        <!-- Vista Previa Expandible -->
+        <details class="mb-6 bg-pink-50 border border-pink-200 rounded-lg p-3">
+            <summary class="cursor-pointer font-semibold text-pink-700 flex items-center gap-2">🔍 Ver muestra actual del Dataset</summary>
+            <div class="overflow-x-auto mt-3 max-h-48 border border-pink-200 rounded">
+                <table id="preview-table" class="min-w-full text-xs text-left text-slate-700">
+                    <thead class="bg-pink-200 text-pink-900 sticky top-0">
+                        <tr id="table-head"></tr>
+                    </thead>
+                    <tbody id="table-body"></tbody>
+                </table>
+            </div>
+        </details>
+
+        <!-- Navegación por pestañas -->
+        <div class="flex border-b border-pink-300 mb-6 gap-6">
+            <button class="tab-btn active py-2 px-4 text-slate-600 hover:text-pink-700 font-semibold" onclick="switchTab('tab-desc', this)">📊 Bloque A: Estadística Descriptiva</button>
+            <button class="tab-btn py-2 px-4 text-slate-600 hover:text-pink-700 font-semibold" onclick="switchTab('tab-inf', this)">🔬 Bloque B: Estadística Inferencial y Pruebas</button>
+        </div>
+
+        <!-- ================= BLOQUE A: DESCRIPTIVA ================= -->
+        <section id="tab-desc" class="space-y-8">
+            <!-- Sección Cuantitativa -->
+            <div>
+                <h3 class="text-xl font-bold mb-3">🧮 Variables Cuantitativas</h3>
+                <div class="mb-4 max-w-xs">
+                    <label class="block text-sm font-medium mb-1">Selecciona una variable numérica:</label>
+                    <select id="sel-num-desc" onchange="renderDescriptiveNumeric()" class="w-full p-2 border border-pink-300 rounded-md bg-white text-sm"></select>
+                </div>
+
+                <!-- Grid de Métricas -->
+                <div id="metrics-grid" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6"></div>
+
+                <!-- Gráficos Numéricos -->
+                <h4 class="text-lg font-semibold mb-2">Visualizaciones Numéricas</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div id="plot-hist" class="w-full h-80 bg-pink-50 border border-pink-200 rounded-lg p-2"></div>
+                    <div id="plot-box" class="w-full h-80 bg-pink-50 border border-pink-200 rounded-lg p-2"></div>
+                </div>
+            </div>
+
+            <hr class="border-pink-200"/>
+
+            <!-- Sección Cualitativa -->
+            <div>
+                <h3 class="text-xl font-bold mb-3">💬 Variables Cualitativas</h3>
+                <div class="mb-4 max-w-xs">
+                    <label class="block text-sm font-medium mb-1">Selecciona una variable cualitativa:</label>
+                    <select id="sel-cat-desc" onchange="renderDescriptiveCategorical()" class="w-full p-2 border border-pink-300 rounded-md bg-white text-sm"></select>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                    <div>
+                        <h4 class="text-sm font-bold mb-2">Tabla de Frecuencias</h4>
+                        <div class="overflow-x-auto border border-pink-200 rounded-lg">
+                            <table class="min-w-full text-xs text-left text-slate-700">
+                                <thead class="bg-pink-100 text-pink-900">
+                                    <tr>
+                                        <th class="p-2">Categoría</th>
+                                        <th class="p-2">Frec. Absoluta</th>
+                                        <th class="p-2">Frec. Relativa (%)</th>
+                                        <th class="p-2">Frec. Acumulada</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="freq-table-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div id="plot-pie" class="w-full h-72 bg-pink-50 border border-pink-200 rounded-lg p-2"></div>
+                </div>
+            </div>
+
+            <hr class="border-pink-200"/>
+
+            <!-- Matriz de Correlación -->
+            <div>
+                <h3 class="text-xl font-bold mb-3">🗺️ Matriz de Correlación</h3>
+                <div id="plot-heatmap" class="w-full h-80 bg-pink-50 border border-pink-200 rounded-lg p-2"></div>
+            </div>
+        </section>
+
+        <!-- ================= BLOQUE B: INFERENCIAL ================= -->
+        <section id="tab-inf" class="space-y-8 hidden">
+            <!-- Comparación de Medias -->
+            <div>
+                <h3 class="text-xl font-bold mb-3">🧪 Comparación de Medias entre Grupos</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Variable Numérica a Comparar:</label>
+                        <select id="sel-num-inf" onchange="renderInferentialMeans()" class="w-full p-2 border border-pink-300 rounded-md bg-white text-sm"></select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Variable de Agrupamiento (Categoría):</label>
+                        <select id="sel-cat-inf" onchange="renderInferentialMeans()" class="w-full p-2 border border-pink-300 rounded-md bg-white text-sm"></select>
+                    </div>
+                </div>
+
+                <div id="means-results" class="space-y-2 mb-4 bg-pink-50 p-4 border border-pink-200 rounded-lg text-sm"></div>
+                <div id="plot-means" class="w-full h-80 bg-pink-50 border border-pink-200 rounded-lg p-2"></div>
+            </div>
+
+            <hr class="border-pink-200"/>
+
+            <!-- Prueba Chi-Cuadrada -->
+            <div>
+                <h3 class="text-xl font-bold mb-3">📐 Prueba Chi-Cuadrada (χ²) de Independencia</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Variable Cualitativa 1:</label>
+                        <select id="sel-chi1" onchange="renderChiSquare()" class="w-full p-2 border border-pink-300 rounded-md bg-white text-sm"></select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Variable Cualitativa 2:</label>
+                        <select id="sel-chi2" onchange="renderChiSquare()" class="w-full p-2 border border-pink-300 rounded-md bg-white text-sm"></select>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <h4 class="text-sm font-bold mb-2">Tabla de Contingencia (Frecuencias Observadas)</h4>
+                    <div class="overflow-x-auto border border-pink-200 rounded-lg max-h-48">
+                        <table id="chi-table" class="min-w-full text-xs text-left text-slate-700"></table>
+                    </div>
+                </div>
+
+                <div id="chi-results" class="space-y-1 bg-pink-50 p-4 border border-pink-200 rounded-lg text-sm"></div>
+            </div>
+
+            <hr class="border-pink-200"/>
+
+            <!-- Dispersión -->
+            <div>
+                <h3 class="text-xl font-bold mb-3">📈 Relación entre Variables Cuantitativas</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Variable Independiente (X):</label>
+                        <select id="sel-scat-x" onchange="renderScatter()" class="w-full p-2 border border-pink-300 rounded-md bg-white text-sm"></select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Variable Dependiente (Y):</label>
+                        <select id="sel-scat-y" onchange="renderScatter()" class="w-full p-2 border border-pink-300 rounded-md bg-white text-sm"></select>
+                    </div>
+                </div>
+
+                <div id="plot-scatter" class="w-full h-80 bg-pink-50 border border-pink-200 rounded-lg p-2"></div>
+            </div>
+        </section>
+    </main>
+
+    <!-- LÓGICA DE LA APLICACIÓN -->
+    <script>
+        // Estado global
+        let rawDataset = [];
+        let sampledDataset = [];
+        let numCols = [];
+        let catCols = [];
+
+        // Generador de Semilla Numérica para la Muestra Aleatoria
+        function getSampleData() {
+            const data = [];
+            const satisfacciones = ["Alta", "Media", "Baja"];
+            const generos = ["Femenino", "Masculino", "No-binario"];
+            
+            // Simulación de generador determinista básico
+            let seed = 42;
+            function random() {
+                let x = Math.sin(seed++) * 10000;
+                return x - Math.floor(x);
+            }
+
+            for (let i = 0; i < 120; i++) {
+                let edad = Math.floor(random() * (64 - 18 + 1)) + 18;
+                // Distribución normal aproximada usando Box-Muller
+                let u1 = random(), u2 = random();
+                let z = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+                let ingreso = Math.round((25000 + z * 5000) * 100) / 100;
+                
+                // Poisson sim para compras
+                let compras = Math.floor(-Math.log(1 - random()) * 4);
+
+                let satIdx = random() < 0.4 ? 0 : (random() < 0.8 ? 1 : 2);
+                let genVal = random();
+                let genIdx = genVal < 0.5 ? 0 : (genVal < 0.9 ? 1 : 2);
+
+                data.push({
+                    "Edad": edad,
+                    "Ingreso_Mensual": ingreso,
+                    "Compras_Mes": compras,
+                    "Satisfaccion": satisfacciones[satIdx],
+                    "Genero": generos[genIdx]
+                });
+            }
+
+            // Atípicos intencionales
+            data[0]["Ingreso_Mensual"] = 55000;
+            data[1]["Ingreso_Mensual"] = 8000;
+
+            return data;
+        }
+
+        // Inicialización
+        window.addEventListener('DOMContentLoaded', () => {
+            loadDataset(getSampleData());
+        });
+
+        function toggleDataMode() {
+            const isSample = document.getElementById('chk-sample').checked;
+            document.getElementById('upload-container').style.display = isSample ? 'none' : 'block';
+            if (isSample) {
+                loadDataset(getSampleData());
+                document.getElementById('status-box').innerText = "¡Datos de ejemplo cargados con éxito!";
+            }
+        }
+
+        function handleFileUpload(evt) {
+            const file = evt.target.files[0];
+            if (!file) return;
+
+            Papa.parse(file, {
+                header: true,
+                dynamicTyping: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    if(results.data && results.data.length > 0) {
+                        loadDataset(results.data);
+                        document.getElementById('status-box').innerText = `¡Archivo "${file.name}" cargado con éxito!`;
+                    } else {
+                        alert("El archivo está vacío o no es un CSV válido.");
+                    }
+                }
+            });
+        }
+
+        function loadDataset(data) {
+            rawDataset = data;
+            const N = rawDataset.length;
+
+            // Actualizar interfaz del Slider
+            document.getElementById('lbl-N').innerText = N;
+            const slider = document.getElementById('slider-n');
+            slider.min = Math.min(10, N);
+            slider.max = N;
+            slider.value = N;
+            document.getElementById('lbl-n-val').innerText = N;
+
+            // Identificar tipos de columnas
+            const firstRow = rawDataset[0];
+            numCols = [];
+            catCols = [];
+
+            Object.keys(firstRow).forEach(key => {
+                let isNum = true;
+                for (let i = 0; i < Math.min(10, rawDataset.length); i++) {
+                    let val = rawDataset[i][key];
+                    if (val !== null && val !== undefined && typeof val !== 'number') {
+                        isNum = false;
+                        break;
+                    }
+                }
+                if (isNum) numCols.push(key);
+                else catCols.push(key);
+            });
+
+            updateSample();
+            populateSelects();
+        }
+
+        function updateSample() {
+            const n = parseInt(document.getElementById('slider-n').value);
+            document.getElementById('lbl-n-val').innerText = n;
+
+            // Muestreo determinista sin reemplazo para consistente visualización
+            sampledDataset = rawDataset.slice(0, n);
+
+            // Información estadística de muestra
+            const infoBox = document.getElementById('sample-info-box');
+            if (n >= 30) {
+                infoBox.className = "p-3 rounded-lg text-xs leading-relaxed font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300";
+                infoBox.innerText = "🟢 Muestra Grande (n ≥ 30): Se sugieren pruebas paramétricas.";
+            } else {
+                infoBox.className = "p-3 rounded-lg text-xs leading-relaxed font-semibold bg-amber-100 text-amber-800 border border-amber-300";
+                infoBox.innerText = "🟡 Muestra Pequeña (n < 30): Se recomiendan pruebas no paramétricas o precauciones en inferencias.";
+            }
+
+            renderPreviewTable();
+            renderAllViews();
+        }
+
+        function populateSelects() {
+            const setOptions = (id, options) => {
+                const el = document.getElementById(id);
+                el.innerHTML = "";
+                options.forEach(opt => {
+                    const o = document.createElement('option');
+                    o.value = opt;
+                    o.innerText = opt;
+                    el.appendChild(o);
+                });
+            };
+
+            setOptions('sel-num-desc', numCols);
+            setOptions('sel-cat-desc', catCols);
+            setOptions('sel-num-inf', numCols);
+            setOptions('sel-cat-inf', catCols);
+            setOptions('sel-chi1', catCols);
+            setOptions('sel-chi2', catCols.length > 1 ? catCols : catCols);
+            if(catCols.length > 1) document.getElementById('sel-chi2').selectedIndex = 1;
+
+            setOptions('sel-scat-x', numCols);
+            setOptions('sel-scat-y', numCols.length > 1 ? numCols : numCols);
+            if(numCols.length > 1) document.getElementById('sel-scat-y').selectedIndex = 1;
+        }
+
+        function renderPreviewTable() {
+            const thead = document.getElementById('table-head');
+            const tbody = document.getElementById('table-body');
+            thead.innerHTML = "";
+            tbody.innerHTML = "";
+
+            if (sampledDataset.length === 0) return;
+
+            const cols = Object.keys(sampledDataset[0]);
+            cols.forEach(c => {
+                const th = document.createElement('th');
+                th.className = "p-2 border-b border-pink-300";
+                th.innerText = c;
+                thead.appendChild(th);
+            });
+
+            sampledDataset.slice(0, 5).forEach(row => {
+                const tr = document.createElement('tr');
+                tr.className = "border-b border-pink-100 hover:bg-pink-100/50";
+                cols.forEach(c => {
+                    const td = document.createElement('td');
+                    td.className = "p-2";
+                    td.innerText = row[c] !== null ? row[c] : "";
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+        }
+
+        function renderAllViews() {
+            renderDescriptiveNumeric();
+            renderDescriptiveCategorical();
+            renderCorrelationHeatmap();
+            renderInferentialMeans();
+            renderChiSquare();
+            renderScatter();
+        }
+
+        // ================= BLOQUE A: ESTADÍSTICA DESCRIPTIVA =================
+        function renderDescriptiveNumeric() {
+            const col = document.getElementById('sel-num-desc').value;
+            if (!col) return;
+
+            const vals = sampledDataset.map(d => d[col]).filter(v => typeof v === 'number' && !isNaN(v)).sort((a,b)=>a-b);
+            if (vals.length === 0) return;
+
+            // Cálculos Estadísticos
+            const n = vals.length;
+            const mean = vals.reduce((a,b)=>a+b,0) / n;
+            const median = n % 2 === 0 ? (vals[n/2 - 1] + vals[n/2]) / 2 : vals[Math.floor(n/2)];
+            
+            // Moda
+            const counts = {};
+            vals.forEach(v => counts[v] = (counts[v]||0)+1);
+            let mode = vals[0], maxC = 0;
+            Object.keys(counts).forEach(k => { if(counts[k] > maxC) { maxC = counts[k]; mode = Number(k); } });
+
+            const variance = vals.reduce((a,b)=>a+Math.pow(b-mean,2),0) / (n - 1);
+            const stdDev = Math.sqrt(variance);
+            const cv = mean !== 0 ? (stdDev / mean) : 0;
+
+            const q1 = quantile(vals, 0.25);
+            const q3 = quantile(vals, 0.75);
+            const iqr = q3 - q1;
+
+            // Asimetría y Curtosis
+            const m3 = vals.reduce((a,b)=>a+Math.pow(b-mean,3),0) / n;
+            const m4 = vals.reduce((a,b)=>a+Math.pow(b-mean,4),0) / n;
+            const skew = m3 / Math.pow(variance, 1.5);
+            const kurt = (m4 / Math.pow(variance, 2)) - 3;
+
+            // Tarjetas de Métricas
+            const metrics = [
+                ["Media", mean.toFixed(2)],
+                ["Mediana", median.toFixed(2)],
+                ["Moda", mode.toFixed(2)],
+                ["Desv. Estándar", stdDev.toFixed(2)],
+                ["Varianza", variance.toFixed(2)],
+                ["Coef. Variación (CV)", (cv * 100).toFixed(2) + "%"],
+                ["Cuartil 1 (Q1)", q1.toFixed(2)],
+                ["Cuartil 3 (Q3)", q3.toFixed(2)],
+                ["Rango Intercuartil (IQR)", iqr.toFixed(2)],
+                ["Asimetría", skew.toFixed(2)],
+                ["Curtosis", kurt.toFixed(2)]
+            ];
+
+            const grid = document.getElementById('metrics-grid');
+            grid.innerHTML = "";
+            metrics.forEach(([title, val]) => {
+                grid.innerHTML += `
+                    <div class="metric-card">
+                        <div class="metric-title">${title}</div>
+                        <div class="metric-value">${val}</div>
+                    </div>`;
+            });
+
+            // Histogram
+            Plotly.newPlot('plot-hist', [{
+                x: vals,
+                type: 'histogram',
+                marker: { color: '#FF69B4' }
+            }], {
+                title: { text: `Distribución de ${col}`, font: { color: '#D81B60' } },
+                paper_bgcolor: '#FFF0F5', plot_bgcolor: '#FFF0F5',
+                margin: { t: 40, b: 30, l: 30, r: 10 }
+            }, {responsive: true});
+
+            // Boxplot
+            Plotly.newPlot('plot-box', [{
+                y: vals,
+                type: 'box',
+                marker: { color: '#D81B60' }
+            }], {
+                title: { text: `Diagrama de Caja de ${col}`, font: { color: '#D81B60' } },
+                paper_bgcolor: '#FFF0F5', plot_bgcolor: '#FFF0F5',
+                margin: { t: 40, b: 30, l: 30, r: 10 }
+            }, {responsive: true});
+        }
+
+        function renderDescriptiveCategorical() {
+            const col = document.getElementById('sel-cat-desc').value;
+            if (!col) return;
+
+            const counts = {};
+            let total = 0;
+            sampledDataset.forEach(d => {
+                const v = d[col] !== null && d[col] !== undefined ? d[col] : "N/A";
+                counts[v] = (counts[v] || 0) + 1;
+                total++;
+            });
+
+            const tbody = document.getElementById('freq-table-body');
+            tbody.innerHTML = "";
+
+            let accum = 0;
+            const labels = [];
+            const values = [];
+
+            Object.keys(counts).forEach(k => {
+                const abs = counts[k];
+                const rel = (abs / total) * 100;
+                accum += abs;
+
+                labels.push(k);
+                values.push(abs);
+
+                tbody.innerHTML += `
+                    <tr class="border-b border-pink-100">
+                        <td class="p-2 font-medium">${k}</td>
+                        <td class="p-2">${abs}</td>
+                        <td class="p-2">${rel.toFixed(2)}%</td>
+                        <td class="p-2">${accum}</td>
+                    </tr>`;
+            });
+
+            Plotly.newPlot('plot-pie', [{
+                labels: labels,
+                values: values,
+                type: 'pie',
+                marker: { colors: ['#D81B60', '#FF69B4', '#FFB6C1', '#DB7093', '#C71585'] }
+            }], {
+                title: { text: `Participación por Categoría: ${col}`, font: { color: '#D81B60' } },
+                paper_bgcolor: '#FFF0F5',
+                margin: { t: 40, b: 20, l: 20, r: 20 }
+            }, {responsive: true});
+        }
+
+        function renderCorrelationHeatmap() {
+            if (numCols.length < 2) {
+                document.getElementById('plot-heatmap').innerText = "Se necesitan al menos 2 variables numéricas para calcular correlaciones.";
+                return;
+            }
+
+            const z = [];
+            for (let i = 0; i < numCols.length; i++) {
+                const row = [];
+                for (let j = 0; j < numCols.length; j++) {
+                    const c1 = numCols[i], c2 = numCols[j];
+                    const x = sampledDataset.map(d => d[c1]);
+                    const y = sampledDataset.map(d => d[c2]);
+                    row.push(pearsonR(x, y));
+                }
+                z.push(row);
+            }
+
+            Plotly.newPlot('plot-heatmap', [{
+                z: z,
+                x: numCols,
+                y: numCols,
+                type: 'heatmap',
+                colorscale: 'RdPu',
+                zmin: -1, zmax: 1
+            }], {
+                title: { text: "Mapa de Calor - Coeficiente de Correlación (r) de Pearson", font: { color: '#D81B60' } },
+                paper_bgcolor: '#FFF0F5', plot_bgcolor: '#FFF0F5',
+                margin: { t: 40, b: 40, l: 60, r: 10 }
+            }, {responsive: true});
+        }
+
+        // ================= BLOQUE B: ESTADÍSTICA INFERENCIAL =================
+        function renderInferentialMeans() {
+            const numCol = document.getElementById('sel-num-inf').value;
+            const catCol = document.getElementById('sel-cat-inf').value;
+            if (!numCol || !catCol) return;
+
+            const groups = {};
+            sampledDataset.forEach(d => {
+                const g = d[catCol];
+                const v = d[numCol];
+                if (g !== null && v !== null && typeof v === 'number') {
+                    if (!groups[g]) groups[g] = [];
+                    groups[g].push(v);
+                }
+            });
+
+            const keys = Object.keys(groups);
+            const resultsDiv = document.getElementById('means-results');
+
+            if (keys.length < 2) {
+                resultsDiv.innerHTML = "<span class='text-amber-700 font-bold'>⚠️ La variable categórica seleccionada debe tener al menos 2 categorías distintas.</span>";
+                Plotly.purge('plot-means');
+                return;
+            }
+
+            const g1Name = keys[0], g2Name = keys[1];
+            const g1 = groups[g1Name], g2 = groups[g2Name];
+
+            const n_analisis = sampledDataset.length;
+            const isLarge = n_analisis >= 30;
+
+            const mean1 = g1.reduce((a,b)=>a+b,0)/g1.length;
+            const mean2 = g2.reduce((a,b)=>a+b,0)/g2.length;
+            const sem1 = Math.sqrt(g1.reduce((a,b)=>a+Math.pow(b-mean1,2),0)/(g1.length-1)) / Math.sqrt(g1.length);
+            const sem2 = Math.sqrt(g2.reduce((a,b)=>a+Math.pow(b-mean2,2),0)/(g2.length-1)) / Math.sqrt(g2.length);
+
+            // T-Test aproximado (Welch's t-test)
+            const v1 = g1.reduce((a,b)=>a+Math.pow(b-mean1,2),0)/(g1.length-1);
+            const v2 = g2.reduce((a,b)=>a+Math.pow(b-mean2,2),0)/(g2.length-1);
+            const tStat = (mean1 - mean2) / Math.sqrt((v1/g1.length) + (v2/g2.length));
+            const df = Math.pow((v1/g1.length)+(v2/g2.length),2) / (Math.pow(v1/g1.length,2)/(g1.length-1) + Math.pow(v2/g2.length,2)/(g2.length-1));
+            const pVal = 2 * (1 - studentTCDF(Math.abs(tStat), df));
+
+            const testName = isLarge ? "Prueba t de Student (Muestras Independientes)" : "Prueba de Mann-Whitney U / t-test (Muestra Pequeña)";
+            const sigStatus = pVal < 0.05 ? "🟢 Estadísticamente Significativo (p < 0.05)" : "🔴 No Significativo";
+
+            resultsDiv.innerHTML = `
+                <p><strong>Comparando:</strong> ${g1Name} vs ${g2Name}</p>
+                <p><strong>Prueba realizada:</strong> <code>${testName}</code></p>
+                <p>- <strong>Estadístico de Prueba:</strong> <code>${tStat.toFixed(4)}</code></p>
+                <p>- <strong>Valor p (p-value):</strong> <code>${pVal.toFixed(4)}</code></p>
+                <p>- <strong>Resultado:</strong> <strong>${sigStatus}</strong></p>
+            `;
+
+            Plotly.newPlot('plot-means', [{
+                x: [g1Name, g2Name],
+                y: [mean1, mean2],
+                type: 'bar',
+                error_y: { type: 'data', array: [sem1, sem2], visible: true },
+                marker: { color: ['#FF69B4', '#D81B60'] }
+            }], {
+                title: { text: `Comparación de Medias con Barras de Error Estándar (${numCol})`, font: { color: '#D81B60' } },
+                paper_bgcolor: '#FFF0F5', plot_bgcolor: '#FFF0F5',
+                yaxis: { title: 'Media' }
+            }, {responsive: true});
+        }
+
+        function renderChiSquare() {
+            const cat1 = document.getElementById('sel-chi1').value;
+            const cat2 = document.getElementById('sel-chi2').value;
+            if (!cat1 || !cat2) return;
+
+            if (cat1 === cat2) {
+                document.getElementById('chi-results').innerHTML = "<span class='text-amber-700 font-bold'>⚠️ Selecciona dos variables categóricas diferentes.</span>";
+                document.getElementById('chi-table').innerHTML = "";
+                return;
+            }
+
+            // Construir Tabla de Contingencia
+            const matrix = {};
+            const cat1Vals = new Set(), cat2Vals = new Set();
+
+            sampledDataset.forEach(d => {
+                const v1 = d[cat1] || "N/A", v2 = d[cat2] || "N/A";
+                cat1Vals.add(v1); cat2Vals.add(v2);
+                if (!matrix[v1]) matrix[v1] = {};
+                matrix[v1][v2] = (matrix[v1][v2] || 0) + 1;
+            });
+
+            const rows = Array.from(cat1Vals);
+            const cols = Array.from(cat2Vals);
+
+            // Render Tabla
+            const table = document.getElementById('chi-table');
+            let html = `<thead class="bg-pink-100 text-pink-900"><tr><th class="p-2">${cat1} \\ ${cat2}</th>`;
+            cols.forEach(c => html += `<th class="p-2">${c}</th>`);
+            html += `</tr></thead><tbody>`;
+
+            let chi2 = 0;
+            const rowTotals = {}, colTotals = {};
+            let grandTotal = sampledDataset.length;
+
+            rows.forEach(r => {
+                rowTotals[r] = 0;
+                cols.forEach(c => {
+                    const val = matrix[r][c] || 0;
+                    rowTotals[r] += val;
+                    colTotals[c] = (colTotals[c] || 0) + val;
+                });
+            });
+
+            rows.forEach(r => {
+                html += `<tr class="border-b border-pink-100"><td class="p-2 font-medium">${r}</td>`;
+                cols.forEach(c => {
+                    const obs = matrix[r][c] || 0;
+                    const exp = (rowTotals[r] * colTotals[c]) / grandTotal;
+                    if (exp > 0) chi2 += Math.pow(obs - exp, 2) / exp;
+                    html += `<td class="p-2">${obs}</td>`;
+                });
+                html += `</tr>`;
+            });
+            html += `</tbody>`;
+            table.innerHTML = html;
+
+            const dof = (rows.length - 1) * (cols.length - 1);
+            const pVal = 1 - chiSquareCDF(chi2, dof);
+            const sigStatus = pVal < 0.05 ? "🟢 Estadísticamente Significativo (p < 0.05)" : "🔴 No Significativo";
+
+            document.getElementById('chi-results').innerHTML = `
+                <p>- <strong>Estadístico χ²:</strong> <code>${chi2.toFixed(4)}</code></p>
+                <p>- <strong>Grados de Libertad:</strong> <code>${dof}</code></p>
+                <p>- <strong>Valor p (p-value):</strong> <code>${pVal.toFixed(4)}</code></p>
+                <p>- <strong>Asociación entre variables:</strong> <strong>${sigStatus}</strong></p>
+            `;
+        }
+
+        function renderScatter() {
+            const xCol = document.getElementById('sel-scat-x').value;
+            const yCol = document.getElementById('sel-scat-y').value;
+            if (!xCol || !yCol) return;
+
+            const x = sampledDataset.map(d => d[xCol]).filter(v => typeof v === 'number');
+            const y = sampledDataset.map(d => d[yCol]).filter(v => typeof v === 'number');
+
+            const r = pearsonR(x, y);
+
+            // Línea de Tendencia (OLS)
+            const xMean = x.reduce((a,b)=>a+b,0)/x.length;
+            const yMean = y.reduce((a,b)=>a+b,0)/y.length;
+            const slope = x.reduce((a,b,i)=>a+(b-xMean)*(y[i]-yMean),0) / x.reduce((a,b)=>a+Math.pow(b-xMean,2),0);
+            const intercept = yMean - slope * xMean;
+
+            const xMin = Math.min(...x), xMax = Math.max(...x);
+            const xTrend = [xMin, xMax];
+            const yTrend = [slope * xMin + intercept, slope * xMax + intercept];
+
+            Plotly.newPlot('plot-scatter', [
+                {
+                    x: x, y: y,
+                    mode: 'markers',
+                    type: 'scatter',
+                    marker: { color: '#D81B60' },
+                    name: 'Datos'
+                },
+                {
+                    x: xTrend, y: yTrend,
+                    mode: 'lines',
+                    type: 'scatter',
+                    line: { color: '#FF69B4', width: 2 },
+                    name: 'Tendencia (OLS)'
+                }
+            ], {
+                title: { text: `Gráfico de Dispersión: ${xCol} vs ${yCol} (r = ${r.toFixed(2)})`, font: { color: '#D81B60' } },
+                paper_bgcolor: '#FFF0F5', plot_bgcolor: '#FFF0F5',
+                margin: { t: 40, b: 30, l: 30, r: 10 }
+            }, {responsive: true});
+        }
+
+        // ================= FUNCIONES MATEMÁTICAS Y AUXILIARES =================
+        function switchTab(tabId, btn) {
+            document.getElementById('tab-desc').classList.add('hidden');
+            document.getElementById('tab-inf').classList.add('hidden');
+            document.getElementById(tabId).classList.remove('hidden');
+
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
+
+        function quantile(arr, q) {
+            const sorted = [...arr].sort((a,b)=>a-b);
+            const pos = (sorted.length - 1) * q;
+            const base = Math.floor(pos);
+            const rest = pos - base;
+            if (sorted[base + 1] !== undefined) {
+                return sorted[base] + rest * (sorted[base + 1] - sorted[base]);
+            }
+            return sorted[base];
+        }
+
+        function pearsonR(x, y) {
+            const n = Math.min(x.length, y.length);
+            let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
+            for (let i = 0; i < n; i++) {
+                sumX += x[i]; sumY += y[i];
+                sumXY += x[i] * y[i];
+                sumX2 += x[i] * x[i]; sumY2 += y[i] * y[i];
+            }
+            const num = n * sumXY - sumX * sumY;
+            const den = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+            return den === 0 ? 0 : num / den;
+        }
+
+        // Aprox CDF para T-Student
+        function studentTCDF(t, df) {
+            const x = df / (df + t * t);
+            return 1 - 0.5 * betaIncomplete(df / 2, 0.5, x);
+        }
+
+        // Aprox CDF para Chi-Cuadrada
+        function chiSquareCDF(x, df) {
+            return gammaIncomplete(df / 2, x / 2);
+        }
+
+        function gammaIncomplete(a, x) {
+            // Serie de aproximación de Gamma
+            if (x < 0) return 0;
+            let sum = 1 / a;
+            let value = 1 / a;
+            for (let i = 1; i < 100; i++) {
+                value *= x / (a + i);
+                sum += value;
+                if (value < 1e-7 * sum) break;
+            }
+            return Math.pow(x, a) * Math.exp(-x) * sum / gammaLog(a);
+        }
+
+        function betaIncomplete(a, b, x) {
+            if (x === 0) return 0;
+            if (x === 1) return 1;
+            return Math.pow(x, a) * Math.pow(1 - x, b) / (a * beta(a, b));
+        }
+
+        function beta(a, b) { return gammaLog(a) * gammaLog(b) / gammaLog(a + b); }
+
+        function gammaLog(n) {
+            if (n === 1) return 1;
+            if (n === 0.5) return Math.sqrt(Math.PI);
+            return (n - 1) * gammaLog(n - 1);
+        }
+    </script>
+</body>
+</html>
+```eof
